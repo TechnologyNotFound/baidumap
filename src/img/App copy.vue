@@ -3,32 +3,38 @@
    
    
    
-    <div id="container" ref="container" @click="print()"></div>
+    <div id="container" ref="container"></div>
 
-   <navigation v-if="selection.leftSelected==0 " :selection="selection"></navigation>
-   
-   <data-display v-if="selection.leftSelected==1 " :selection="selection"></data-display>
+   <div id="driving_way1" >
 
-   <planeParameter v-if="selection.leftSelected==2 " :selection="selection"></planeParameter>
 
-    <wplane :wplane="wplane" v-if="selection.rightSelected==1 " ref="wplane"></wplane>
+		<div  class="item" :class="{'select':(hover== 0)}"  @click="changeSelect(1)" @mouseover="hov(0)" @mouseout="unhov()">
+        	<img src="./img/gps.png" v-if="hover!=0"  style="height:25px;width:25px;padding-top:3px;padding-left:7px"/>
+        <img src="./img/gps-black.png" v-if="hover==0" style="height:25px;width:25px;padding-top:3px;padding-left:7px"/>
+            <span style="font-size:12px;padding-top:6px;padding-left:7px">无人机位置</span>
+        </div>
+
+
+		<div  class="item" :class="{'select':(hover== 1)}"  @click="changeSelect(1)" @mouseover="hov(1)" @mouseout="unhov()">
+        	<img src="./img/data.png" v-if="hover!=1"  style="height:25px;width:25px;padding-top:3px;padding-left:7px"/>
+        <img src="./img/data-black.png" v-if="hover==1" style="height:25px;width:25px;padding-top:3px;padding-left:7px"/>
+            <span style="font-size:12px;padding-top:6px;padding-left:7px">数据显示</span>
+        </div>
+
+
+   </div>
+
+   <wplane :wplane="wplane" v-if="selected==1 "></wplane>
    
    
-   <thermodynamic ref="thermodynamic" v-show="showWhich.showHot==1"></thermodynamic>
    
      
     </div>
    </template>
     
    <script>
-
    import wplane from '@/components/wplane.vue';
-   import navigation from '@/components/navigation.vue';
-   import dataDisplay from '@/components/dataDisplay.vue';
    import plane from './img/plane.png';
-   import planeParameter from '@/components/planeParameter.vue';
-   import thermodynamic from './components/thermodynamic.vue';
-   import store from '@/store';
    import Swiper from 'swiper'
    
           
@@ -39,11 +45,7 @@
     
     name: 'App',
     components:{
-       wplane,
-	   navigation,
-	   dataDisplay,
-	   planeParameter,
-       thermodynamic
+       wplane
     },
     watch:{
         'wplane.planeLat': function(newVal,oldVal) {
@@ -64,17 +66,12 @@
     data(){
      return{
        map:null,
-       showWhich:{},
-       temperature:"NA",
        planeLat:36.16685,
        planeLon:120.504607,
        planeAlt:10,
        marker:null,
-	   selection:{
-			'leftSelected':0,
-			'rightSelected':1
-
-	   },
+       time:0,
+	   selected:0,
        path : [{
            'lng': 120.504607,
            'lat': 36.16685
@@ -108,6 +105,9 @@
    
      ],
    
+     pathLine:null,
+     trackAni:null,
+     hover:-1,
     wplane:{
        "map":this.map,
        "planeLat":this.planeLat,
@@ -115,7 +115,6 @@
        "planeAlt":this.planeAlt,
        "path":this.path,
        "marker":this.marker,
-       "temperature":"NA"
    
      }
     
@@ -125,15 +124,20 @@
     },
    
     methods:{
-
-        print(){
-            this.$refs.wplane.print();    
-        },
-
-//         trace(){
-//       this.axios.get("/server/pos/sendToExplorer").then();
-//   },
-         
+		changeSelect(t){
+			this.selected=t;
+		},
+       changed(){
+           this.wplane.planeLon=120.504607;
+           this.wplane.planeLat=36.16685;
+           this.planeLon=120.504607;
+           this.planeLat=36.16685;
+           var point = new BMapGL.Point(120.504607,36.16685);
+       //   this.wplane.map.centerAndZoom(point, 25);//地图视野转到无人机的位置
+           this.wplane.marker.setPosition(point);//修改wplane的新坐标
+       },
+       
+    
    
      wplaneInit(){
            this.wplane.map=this.map;
@@ -153,16 +157,14 @@
    
            var temp=this.wplane;
            var m=this.map;
-           var me=this;
    
-
            function changing(event){
-            temp.planeLon+=0.000002;//=position.lnt;
+               var position=JSON.parse(event.data);
+               temp.planeLon+=0.000002;//=position.lnt;
                temp.planeLat+=0.000002 ;//=position.lat;
                var point = new BMapGL.Point(temp.planeLon,temp.planeLat);
-               temp.marker.setPosition(point);//修改wplane的新坐标
-               temp.temperature=event.data;
-               console.log("温度:"+temp.temperature);
+                 temp.marker.setPosition(point);//修改wplane的新坐标
+               // m.flyTo(point);
            }
    
    
@@ -175,18 +177,13 @@
            }
            websocket.onmessage=function (event) {
                changing(event);
-               if(me.$refs.thermodynamic!=null)
-              me.$refs.thermodynamic.draw(temp.temperature);
-
            }
-        //    websocket.onerror=function () {
-        //        alert('websocket通信错误')
-        //    }
+           websocket.onerror=function () {
+               alert('websocket通信错误')
+           }
            window.onbeforeunload=function () {
                websocket.close();
            }
-
-        //    this.trace();
    
      },
    
@@ -221,19 +218,53 @@
        
        map.addOverlay(marker);                     // 将标注添加到地图中
        map.enableScrollWheelZoom(true);     //开启鼠标滚轮缩
-       this.$refs.wplane.print();
+   
    
    
      },
+      unhov(){
+         this.hover=-1;
+     },
+     hov(t){
+         this.hover=t;
 
-
+     },
+     removePath(){
+         this.map.removeOverlay(this.pathLine);
+         this.trackAni.cancel();
+     },
+     getPos(){
+       var point = new BMapGL.Point(this.wplane.planeLon,this.wplane.planeLat);
+       this.map.flyTo(point);
+       console.log(this.map.lat);
+     },
+   
+     getPath(){
+       var point = [];
+       for (var i = 0; i < this.path.length; i++) {
+           point.push(new BMapGL.Point(this.path[i].lng, this.path[i].lat));
+       }
+       var pl = new BMapGL.Polyline(point);
+     this.pathLine=pl;
+       
+       
+       var trackAni = new BMapGLLib.TrackAnimation(this.map, pl, {
+           overallView: true, // 动画完成后自动调整视野到总览
+           tilt: 30,          // 轨迹播放的角度，默认为55
+           duration: 2500,   // 动画持续时长，默认为10000，单位ms
+           delay: 0        // 动画开始的延迟，默认0，单位ms
+       });
+     this.trackAni=trackAni;
+   
+   
+     this.trackAni.start();
+     }
     
     },
    
     mounted(){
       this.mapInit();
        this.wplaneInit();
-       this.showWhich=store.state.showWhich;
     }
    
    }
@@ -262,7 +293,24 @@
                        z-index: 99;
                        padding: 10px
                    }
-
+   
+   .item{
+           width: 130px;
+           height: 30px;
+       	border-radius: 15px;
+           display: flex;
+           flex-direction: row;
+           background-color:#b0b7b7; 
+       cursor: pointer;
+	   margin-left: 70px;
+	   margin-top: 30px;
+   
+       }
+   
+   .select{
+     background-color:#609afd; 
+   
+   }
    
    #app {
     font-family: 'Avenir', Helvetica, Arial, sans-serif;
@@ -273,7 +321,6 @@
     margin-top: 60px;
     
    }
-
    #container{
     height: 800px;
     overflow: hidden;
@@ -281,7 +328,18 @@
     
    }
 
-
+   #driving_way1{
+                    position: fixed;
+                    top: 10px;
+                    left: 20px;
+                    width: 270px;
+                    height: 650px;
+                    background: #fff;
+                    box-shadow: 0 2px 6px 0 rgba(27, 142, 236, 0.5);
+                    border-radius: 7px;
+                    z-index: 99;
+                    padding: 10px
+                }
    
    </style>
    
